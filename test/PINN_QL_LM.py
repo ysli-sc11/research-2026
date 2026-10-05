@@ -9,21 +9,9 @@ from abc import ABC, abstractmethod
 # ============================================================
 
 class Poisson1D:
-    """
-    Solve
-
-        u''(x) = pi^2 sin(pi x),
-        u(0) = u(1) = 0.
-
-    Exact solution:
-
-        u(x) = -sin(pi x)
-    """
-
-    def __init__(self, n_collocation=101):
+    
+    def __init__(self, n_collocation=63):
         self.n_collocation = n_collocation
-
-        # Collocation points: exclude the boundary points
         self.x = np.linspace(
             0.0,
             1.0,
@@ -31,29 +19,16 @@ class Poisson1D:
         )[1:-1]
 
     def forcing(self, x):
-        """
-        f(x) = pi^2 sin(pi x)
-        """
         return np.pi**2 * np.sin(np.pi * x)
-
+    
     def exact_solution(self, x):
-        """
-        Exact solution u(x) = -sin(pi x)
-        """
         return -np.sin(np.pi * x)
-
+    
     def residual(self, network, theta):
-        """
-        residual_i = f(x_i) - u_theta''(x_i)
-        """
         u_xx = network.d2u_dx2(self.x, theta)
-
         return self.forcing(self.x) - u_xx
 
     def residual_norm(self, network, theta):
-        """
-        ||r||_2
-        """
         r = self.residual(network, theta)
         return np.linalg.norm(r)
 
@@ -63,33 +38,12 @@ class Poisson1D:
 # ============================================================
 
 class NeuralNetwork1D:
+
     """
-    One-hidden-layer network
-
-        S^N(x) = sum_i c_i tanh(w_i x + b_i)
-
-    with boundary auxiliary function
-
-        eta(x) = 4x(1-x)
-
-    Therefore
-
-        u_theta(x)
-        = eta(x) S^N(x)
     """
-
     def __init__(self, N=20, seed=1234):
         self.N = N
-
         rng = np.random.default_rng(seed)
-
-        # Parameter ordering:
-        #
-        # theta =
-        # [c_1,...,c_N,
-        #  w_1,...,w_N,
-        #  b_1,...,b_N]
-        #
         self.c = 0.1 * rng.standard_normal(N)
         self.w = 0.1 * rng.standard_normal(N)
         self.b = 0.1 * rng.standard_normal(N)
@@ -99,9 +53,6 @@ class NeuralNetwork1D:
         return 3 * self.N
 
     def pack(self):
-        """
-        Convert c, w, b into one parameter vector.
-        """
         return np.concatenate([
             self.c,
             self.w,
@@ -109,66 +60,33 @@ class NeuralNetwork1D:
         ])
 
     def unpack(self, theta):
-        """
-        Convert parameter vector into c, w, b.
-        """
         N = self.N
-
         c = theta[:N]
         w = theta[N:2*N]
         b = theta[2*N:3*N]
-
         return c, w, b
 
     def eta(self, x):
-        """
-        Boundary auxiliary function
-
-            eta(x) = 4x(1-x)
-        """
         return 4.0 * x * (1.0 - x)
 
     def eta_x(self, x):
-        """
-        eta'(x) = 4 - 8x
-        """
         return 4.0 - 8.0 * x
 
     def eta_xx(self, x):
-        """
-        eta''(x) = -8
-        """
         return -8.0 * np.ones_like(x)
 
+    """
+    """
     def forward(self, x, theta):
-        """
-        u_theta(x)
-        """
         c, w, b = self.unpack(theta)
-
         z = x[:, None] * w[None, :] + b[None, :]
         h = np.tanh(z)
-
         S = np.sum(c[None, :] * h, axis=1)
-
         return self.eta(x) * S
 
     def du_dx(self, x, theta):
-        """
-        First derivative:
-
-            u = eta S
-
-            u' = eta' S + eta S'
-
-        where
-
-            S' = sum c_i w_i sech^2(z_i)
-        """
         c, w, b = self.unpack(theta)
-
         z = x[:, None] * w[None, :] + b[None, :]
-
         tanh_z = np.tanh(z)
         sech2_z = 1.0 - tanh_z**2
 
@@ -188,27 +106,8 @@ class NeuralNetwork1D:
         )
 
     def d2u_dx2(self, x, theta):
-        """
-        Second derivative:
-
-            u'' = eta'' S
-                + 2 eta' S'
-                + eta S''
-
-        For
-
-            S = sum c_i tanh(z_i)
-
-        we have
-
-            S''
-            = sum c_i w_i^2
-              (-2 tanh(z_i) sech^2(z_i))
-        """
         c, w, b = self.unpack(theta)
-
         z = x[:, None] * w[None, :] + b[None, :]
-
         tanh_z = np.tanh(z)
         sech2_z = 1.0 - tanh_z**2
 
