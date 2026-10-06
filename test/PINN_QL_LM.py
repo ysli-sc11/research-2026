@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 # ============================================================
 
 class Poisson1D:
-    
+
     def __init__(self, n_collocation=63):
         self.n_collocation = n_collocation
         self.x = np.linspace(
@@ -20,10 +20,10 @@ class Poisson1D:
 
     def forcing(self, x):
         return np.pi**2 * np.sin(np.pi * x)
-    
+
     def exact_solution(self, x):
         return -np.sin(np.pi * x)
-    
+
     def residual(self, network, theta):
         u_xx = network.d2u_dx2(self.x, theta)
         return self.forcing(self.x) - u_xx
@@ -41,6 +41,7 @@ class NeuralNetwork1D:
 
     """
     """
+
     def __init__(self, N=20, seed=1234):
         self.N = N
         rng = np.random.default_rng(seed)
@@ -77,6 +78,7 @@ class NeuralNetwork1D:
 
     """
     """
+
     def forward(self, x, theta):
         c, w, b = self.unpack(theta)
         z = x[:, None] * w[None, :] + b[None, :]
@@ -134,35 +136,16 @@ class NeuralNetwork1D:
             + self.eta(x) * S_xx
         )
 
-    # --------------------------------------------------------
-    # Parameter derivatives of u_theta
-    # --------------------------------------------------------
-
     def du_dtheta(self, x, theta):
-        """
-        G = d u_theta / d theta
 
-        Shape:
-
-            (number_of_x, number_of_parameters)
-
-        Parameter order:
-
-            [c_1,...,c_N,w_1,...,w_N,b_1,...,b_N]
-        """
         c, w, b = self.unpack(theta)
-
         z = x[:, None] * w[None, :] + b[None, :]
-
         tanh_z = np.tanh(z)
         sech2_z = 1.0 - tanh_z**2
-
         eta = self.eta(x)
 
-        # d u / d c_i
         d_c = eta[:, None] * tanh_z
 
-        # d u / d w_i
         d_w = (
             eta[:, None]
             * c[None, :]
@@ -170,7 +153,6 @@ class NeuralNetwork1D:
             * x[:, None]
         )
 
-        # d u / d b_i
         d_b = (
             eta[:, None]
             * c[None, :]
@@ -182,75 +164,31 @@ class NeuralNetwork1D:
             axis=1
         )
 
-    # --------------------------------------------------------
-    # Parameter derivatives of u_theta''
-    # --------------------------------------------------------
-
     def d2u_dtheta(self, x, theta):
-        """
-        J = d u_theta'' / d theta
-
-        Shape:
-            (number_of_x, number_of_parameters)
-
-        Parameter order:
-            [c_1,...,c_N,
-            w_1,...,w_N,
-            b_1,...,b_N]
-
-        u_theta(x)
-            = eta(x) * S(x)
-
-        S(x)
-            = sum_i c_i tanh(w_i x + b_i)
-
-        u_theta''
-            = eta'' S
-            + 2 eta' S'
-            + eta S''
-        """
 
         c, w, b = self.unpack(theta)
-
-        # --------------------------------------------------------
-        # z_i = w_i x + b_i
-        # --------------------------------------------------------
-
         z = x[:, None] * w[None, :] + b[None, :]
-
-        # tanh(z)
         t = np.tanh(z)
-
-        # sech^2(z) = 1 - tanh^2(z)
         s = 1.0 - t**2
 
-        # Boundary function
         eta = self.eta(x)
         eta_x = self.eta_x(x)
         eta_xx = self.eta_xx(x)
 
-        # ========================================================
-        # S(x) = sum c_i tanh(z_i)
-        # ========================================================
+        dS_dw = (
+            c[None, :]
+            * s
+            * x[:, None]
+        )
 
-        # ========================================================
-        # S'(x)
-        #
-        # S'_i = c_i w_i sech^2(z_i)
-        # ========================================================
+        dS_db = (
+            c[None, :] * s
+        )
 
-        # dS'/dc
         dSx_dc = (
             w[None, :] * s
         )
 
-        # dS'/dw
-        #
-        # d/dw [c w sech^2(z)]
-        #
-        # = c sech^2(z)
-        #   + c w [-2 tanh(z) sech^2(z)] x
-        #
         dSx_dw = (
             c[None, :]
             * (
@@ -261,54 +199,23 @@ class NeuralNetwork1D:
             )
         )
 
-        # dS'/db
-        #
-        # = c w [-2 tanh(z) sech^2(z)]
-        #
         dSx_db = (
             c[None, :]
             * w[None, :]
             * (-2.0 * t * s)
         )
 
-        # ========================================================
-        # S''(x)
-        #
-        # S''_i
-        # = -2 c_i w_i^2 tanh(z_i) sech^2(z_i)
-        # ========================================================
-
         q = -2.0 * t * s
-
-        # derivative of q with respect to z
-        #
-        # q(z) = -2 tanh(z) sech^2(z)
-        #
-        # q'(z)
-        # = -2 sech^2(z) [1 - 3 tanh^2(z)]
-        #
         dq_dz = (
             -2.0
             * s
             * (1.0 - 3.0 * t**2)
         )
 
-        # dS''/dc
         dSxx_dc = (
             w[None, :]**2 * q
         )
 
-        # dS''/dw
-        #
-        # S''_i = c_i w_i^2 q(z_i)
-        #
-        # d/dw:
-        #
-        # c_i [
-        #     2 w_i q(z_i)
-        #     + w_i^2 q'(z_i) x
-        # ]
-        #
         dSxx_dw = (
             c[None, :]
             * (
@@ -319,42 +226,16 @@ class NeuralNetwork1D:
             )
         )
 
-        # dS''/db
-        #
-        # = c_i w_i^2 q'(z_i)
-        #
         dSxx_db = (
             c[None, :]
             * w[None, :]**2
             * dq_dz
         )
 
-        # ========================================================
-        # u'' = eta'' S + 2 eta' S' + eta S''
-        # ========================================================
-
-        # --------------------------------------------------------
-        # d u'' / d c
-        # --------------------------------------------------------
-
         J_c = (
             eta_xx[:, None] * t
             + 2.0 * eta_x[:, None] * dSx_dc
             + eta[:, None] * dSxx_dc
-        )
-
-        # --------------------------------------------------------
-        # d u'' / d w
-        #
-        # Need:
-        #
-        # dS/dw = c sech^2(z) x
-        # --------------------------------------------------------
-
-        dS_dw = (
-            c[None, :]
-            * s
-            * x[:, None]
         )
 
         J_w = (
@@ -363,27 +244,11 @@ class NeuralNetwork1D:
             + eta[:, None] * dSxx_dw
         )
 
-        # --------------------------------------------------------
-        # d u'' / d b
-        #
-        # dS/db = c sech^2(z)
-        # --------------------------------------------------------
-
-        dS_db = (
-            c[None, :] * s
-        )
-
         J_b = (
             eta_xx[:, None] * dS_db
             + 2.0 * eta_x[:, None] * dSx_db
             + eta[:, None] * dSxx_db
         )
-
-        # --------------------------------------------------------
-        # Combine parameter derivatives
-        #
-        # J = [J_c | J_w | J_b]
-        # --------------------------------------------------------
 
         J = np.concatenate(
             [J_c, J_w, J_b],
@@ -431,7 +296,8 @@ class OptimizerBase(ABC):
         pass
 
     def record(self, iteration, elapsed_time):
-
+        """
+        """
         residual = self.problem.residual_norm(
             self.network,
             self.theta
@@ -453,7 +319,6 @@ class OptimizerBase(ABC):
 
         start_time = time.perf_counter()
 
-        # Record initial state
         self.record(
             iteration=0,
             elapsed_time=0.0
@@ -469,7 +334,8 @@ class OptimizerBase(ABC):
                 iteration=k,
                 elapsed_time=elapsed_time
             )
-
+            """
+            """
             if self.converged:
                 break
 
@@ -481,21 +347,6 @@ class OptimizerBase(ABC):
 # ============================================================
 
 class GradientMethod(OptimizerBase):
-    """
-    Gradient method.
-
-    r = f - u''
-    J = d(u'') / d(theta)
-
-    L = 1/2 ||r||^2
-
-    grad L = -J^T r
-
-    theta_{k+1}
-        = theta_k - alpha grad L
-
-        = theta_k + alpha J^T r
-    """
 
     def step(self):
 
@@ -522,22 +373,6 @@ class GradientMethod(OptimizerBase):
 # ============================================================
 
 class SemiGradientMethod(OptimizerBase):
-    """
-    Semi-gradient method.
-
-    Instead of using
-
-        J = d(u'')/d(theta),
-
-    use
-
-        G = du/d(theta).
-
-    Update:
-
-        theta_{k+1}
-            = theta_k + alpha G^T r
-    """
 
     def step(self):
 
@@ -551,7 +386,7 @@ class SemiGradientMethod(OptimizerBase):
             self.theta
         )
 
-        gradient = 2.0 * G.T @ r
+        gradient = G.T @ r
 
         self.theta = (
             self.theta
