@@ -269,7 +269,7 @@ class OptimizerBase(ABC):
         problem,
         network,
         theta0,
-        alpha=1e-4,
+        alpha=1e-3,
         max_iter=100000,
         tolerance=1e-6
     ):
@@ -399,26 +399,13 @@ class SemiGradientMethod(OptimizerBase):
 # ============================================================
 
 class DampedGaussNewton(OptimizerBase):
-    """
-    Damped Gauss-Newton method.
-
-    Solve
-
-        (J^T J + lambda I) delta
-            = J^T r
-
-    and update
-
-        theta_{k+1}
-            = theta_k + delta
-    """
 
     def __init__(
         self,
         problem,
         network,
         theta0,
-        damping=1e-4,
+        damping=100,
         max_iter=1000,
         tolerance=1e-6
     ):
@@ -454,15 +441,7 @@ class DampedGaussNewton(OptimizerBase):
         )
 
         rhs = J.T @ r
-
-        # Do NOT calculate inverse(A).
-        #
-        # Instead solve:
-        #
-        # A delta = rhs
-        #
         delta = np.linalg.solve(A, rhs)
-
         self.theta = self.theta + delta
 
 
@@ -474,8 +453,8 @@ class Experiment:
 
     def __init__(
         self,
-        N=20,
-        n_collocation=101,
+        N=64,
+        n_collocation=63,
         seed=1234
     ):
 
@@ -488,25 +467,19 @@ class Experiment:
             seed=seed
         )
 
-        # Same initial parameters for all methods
         self.theta0 = self.network.pack()
-
         self.results = {}
 
     def run_all(
         self,
-        alpha_gradient=1e-4,
-        alpha_semi=1e-4,
-        damping=1e-4,
-        max_iter_gradient=100000,
-        max_iter_semi=100000,
+        alpha_gradient=1e-3,
+        alpha_semi=1e-3,
+        damping=100,
+        max_iter_gradient=10000,
+        max_iter_semi=10000,
         max_iter_newton=1000,
         tolerance=1e-6
     ):
-
-        # ----------------------------------------------------
-        # Gradient
-        # ----------------------------------------------------
 
         gradient = GradientMethod(
             problem=self.problem,
@@ -519,12 +492,7 @@ class Experiment:
 
         print("Running Gradient Method...")
         gradient.run()
-
         self.results["Gradient"] = gradient
-
-        # ----------------------------------------------------
-        # Semi-gradient
-        # ----------------------------------------------------
 
         semi_gradient = SemiGradientMethod(
             problem=self.problem,
@@ -537,12 +505,7 @@ class Experiment:
 
         print("Running Semi-gradient Method...")
         semi_gradient.run()
-
         self.results["Semi-gradient"] = semi_gradient
-
-        # ----------------------------------------------------
-        # Damped Gauss-Newton
-        # ----------------------------------------------------
 
         newton = DampedGaussNewton(
             problem=self.problem,
@@ -555,7 +518,6 @@ class Experiment:
 
         print("Running Damped Gauss-Newton Method...")
         newton.run()
-
         self.results["Damped Gauss-Newton"] = newton
 
 
@@ -567,119 +529,170 @@ def plot_solution(
     experiment,
     n_plot=500
 ):
-
     problem = experiment.problem
     network = experiment.network
-
-    x_plot = np.linspace(
-        0.0,
-        1.0,
-        n_plot
-    )
-
+    x_plot = np.linspace(0.0, 1.0, n_plot)
     u_exact = problem.exact_solution(x_plot)
 
-    plt.figure(figsize=(8, 5))
+    style_map = {
+        "Damped Gauss-Newton": {
+            "ls": "--",          
+            "color": "#D95F02",   
+            "lw": 2.2,
+            "zorder": 4
+        },
+        "Gradient": {
+            "ls": ":",           
+            "color": "#7570B3",  
+            "lw": 2.5,
+            "zorder": 3
+        },
+        "Semi-gradient": {
+            "ls": "-.",          
+            "color": "#1B9E77",   
+            "lw": 2.0,
+            "zorder": 2
+        }
+    }
+
+    plt.figure(figsize=(9, 5.5))
 
     plt.plot(
         x_plot,
         u_exact,
-        label="Exact solution",
-        linewidth=2
+        label=r"Exact solution: $-\sin(\pi x)$",
+        linestyle=(0, (5, 5)),
+        color="black",
+        linewidth=2.8,
+        alpha=0.7,
+        zorder=1
     )
 
     for name, optimizer in experiment.results.items():
-
-        u_pred = network.forward(
-            x_plot,
-            optimizer.theta
+        u_pred = network.forward(x_plot, optimizer.theta)
+        
+        style = style_map.get(
+            name, 
+            {"ls": ":", "color": "gray", "lw": 2.0, "zorder": 2}
         )
 
         plt.plot(
             x_plot,
             u_pred,
-            label=name
+            label=name,
+            linestyle=style["ls"],
+            color=style["color"],
+            linewidth=style["lw"],
+            zorder=style["zorder"]
         )
 
-    plt.xlabel(r"$x$")
-    plt.ylabel(r"$u(x)$")
+    plt.xlabel(r"$x$", fontsize=12)
+    plt.ylabel(r"$u(x)$", fontsize=12)
+    plt.title("Neural Network Approximation of 1D Poisson Equation", fontsize=13)
 
-    plt.title(
-        "Neural Network Approximation of 1D Poisson Equation"
-    )
-
-    plt.legend()
-    plt.grid(True, alpha=0.3)
+    plt.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=10)
+    plt.grid(True, linestyle=":", alpha=0.5)
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 
 # ============================================================
-# 9. Plot 2: Residual vs cumulative execution time
+# 9. Plot 2: Residual vs Iteration (Log-Log Scale)
 # ============================================================
 
-def plot_residual_vs_time(
+def plot_residual_vs_iteration(
     experiment,
     tolerance=1e-6
 ):
-
+    style_map = {
+        "Damped Gauss-Newton": {
+            "ls": "--",
+            "color": "#D95F02",   # 橘紅
+            "lw": 2.2,
+            "marker": "o",
+            "zorder": 4
+        },
+        "Gradient": {
+            "ls": ":",
+            "color": "#7570B3",   # 紫藍
+            "lw": 2.5,
+            "marker": "s",
+            "zorder": 3
+        },
+        "Semi-gradient": {
+            "ls": "-.",
+            "color": "#1B9E77",   # 藍綠
+            "lw": 2.0,
+            "marker": "^",
+            "zorder": 2
+        }
+    }
+    
     plt.figure(figsize=(9, 6))
 
     for name, optimizer in experiment.results.items():
-
-        times = np.array(optimizer.times)
         residuals = np.array(optimizer.residuals)
-        iterations = np.array(optimizer.iterations)
+        iterations_plus_one = np.array(optimizer.iterations) + 1
 
-        plt.semilogy(
-            times,
-            residuals,
-            label=name
+        style = style_map.get(
+            name,
+            {"ls": ":", "color": "gray", "lw": 2.0, "marker": "o", "zorder": 2}
         )
 
-        # ----------------------------------------------------
-        # Find first iteration reaching tolerance
-        # ----------------------------------------------------
+        plt.loglog(
+            iterations_plus_one,
+            residuals,
+            label=name,
+            linestyle=style["ls"],
+            color=style["color"],
+            linewidth=style["lw"],
+            zorder=style["zorder"]
+        )
 
         indices = np.where(
             residuals <= tolerance
         )[0]
 
         if len(indices) > 0:
-
             idx = indices[0]
 
-            t_conv = times[idx]
             r_conv = residuals[idx]
-            iter_conv = iterations[idx]
+            iter_conv = optimizer.iterations[idx]     
+            x_conv = iterations_plus_one[idx]          
 
             plt.scatter(
-                t_conv,
+                x_conv,
                 r_conv,
                 s=60,
-                zorder=5
+                color=style["color"],
+                marker=style["marker"],
+                edgecolors="black",
+                linewidths=1.2,
+                zorder=style["zorder"] + 5
             )
 
             plt.annotate(
-                f"iter = {iter_conv}\ntime = {t_conv:.4f} s",
-                xy=(t_conv, r_conv),
+                f"iter = {iter_conv}",
+                xy=(x_conv, r_conv),
                 xytext=(10, 15),
                 textcoords="offset points",
                 arrowprops=dict(
-                    arrowstyle="->"
-                )
+                    arrowstyle="->",
+                    color=style["color"],
+                    lw=1.2
+                ),
+                fontsize=9,
+                fontweight="bold",
+                color=style["color"]
             )
 
             print(
                 f"{name}: "
                 f"residual <= {tolerance:.0e}, "
-                f"iteration = {iter_conv}, "
-                f"time = {t_conv:.6f} s"
+                f"iteration = {iter_conv}"
             )
-
         else:
-
             print(
                 f"{name}: "
                 f"did NOT reach {tolerance:.0e}"
@@ -687,28 +700,22 @@ def plot_residual_vs_time(
 
     plt.axhline(
         tolerance,
-        linestyle="--",
-        linewidth=1,
+        linestyle=(0, (4, 4)),
+        color="black",
+        linewidth=1.2,
+        alpha=0.7,
         label=r"$10^{-6}$ target"
     )
 
-    plt.xlabel(
-        "Cumulative execution time (s)"
-    )
+    plt.xlabel("Iteration (log scale)", fontsize=12)
+    plt.ylabel(r"Residual norm $\|r\|_2$ (log scale)", fontsize=12)
+    plt.title("Convergence History: Residual vs. Iteration", fontsize=13)
 
-    plt.ylabel(
-        r"$\|r\|_2$"
-    )
-
-    plt.title(
-        "Residual vs. Cumulative Execution Time"
-    )
-
-    plt.legend()
-    plt.grid(True, which="both", alpha=0.3)
+    plt.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=10)
+    plt.grid(True, which="both", linestyle=":", alpha=0.5)
 
     plt.tight_layout()
-    plt.show()
+    #plt.show()
 
 
 # ============================================================
@@ -717,12 +724,17 @@ def plot_residual_vs_time(
 
 def print_summary(experiment):
 
-    print("\n")
-    print("=" * 75)
-    print("FINAL RESULTS")
+    print("\n" + "=" * 75)
+    print("FINAL BENCHMARK RESULTS")
     print("=" * 75)
 
     for name, optimizer in experiment.results.items():
+
+        if not optimizer.residuals:
+            print(f"\n{name}")
+            print("-" * 75)
+            print("No iteration data recorded.")
+            continue
 
         final_residual = optimizer.residuals[-1]
         final_iteration = optimizer.iterations[-1]
@@ -731,39 +743,18 @@ def print_summary(experiment):
         print(f"\n{name}")
         print("-" * 75)
 
-        print(
-            f"Final residual : {final_residual:.6e}"
-        )
-
-        print(
-            f"Iterations     : {final_iteration}"
-        )
-
-        print(
-            f"Time           : {final_time:.6f} s"
-        )
+        print(f"Final residual   : {final_residual:.6e}")
+        print(f"Total iterations : {final_iteration}")
+        print(f"Total run time   : {final_time:.6f} s")
 
         if optimizer.converged:
-
-            print(
-                f"Reached 1e-6   : YES"
-            )
-
-            print(
-                f"Convergence iter: "
-                f"{optimizer.convergence_iteration}"
-            )
-
-            print(
-                f"Convergence time: "
-                f"{optimizer.convergence_time:.6f} s"
-            )
-
+            print(f"Reached tol      : YES")
+            print(f"Convergence iter : {optimizer.convergence_iteration}")
+            print(f"Convergence time : {optimizer.convergence_time:.6f} s")
         else:
+            print(f"Reached tol      : NO")
 
-            print(
-                f"Reached 1e-6   : NO"
-            )
+    print("\n" + "=" * 75)
 
 
 # ============================================================
@@ -772,52 +763,23 @@ def print_summary(experiment):
 
 if __name__ == "__main__":
 
-    # --------------------------------------------------------
-    # Experiment settings
-    # --------------------------------------------------------
-
     experiment = Experiment(
-        N=20,
-        n_collocation=101,
-        seed=1234
+        N=64,
+        n_collocation=191,
+        seed=42
     )
-
-    # --------------------------------------------------------
-    # Run all three methods
-    #
-    # These learning rates / damping are initial values.
-    # They may need tuning depending on N and initialization.
-    # --------------------------------------------------------
 
     experiment.run_all(
         alpha_gradient=1e-5,
         alpha_semi=1e-5,
-        damping=1e-4,
-        max_iter_gradient=100000,
-        max_iter_semi=100000,
-        max_iter_newton=10000,
+        damping=1e-2,
+        max_iter_gradient=10000,
+        max_iter_semi=10000,
+        max_iter_newton=1000,
         tolerance=1e-6
     )
-
-    # --------------------------------------------------------
-    # Print numerical results
-    # --------------------------------------------------------
 
     print_summary(experiment)
-
-    # --------------------------------------------------------
-    # Figure 1
-    # --------------------------------------------------------
-
-    plot_solution(
-        experiment
-    )
-
-    # --------------------------------------------------------
-    # Figure 2
-    # --------------------------------------------------------
-
-    plot_residual_vs_time(
-        experiment,
-        tolerance=1e-6
-    )
+    plot_solution(experiment)
+    plot_residual_vs_iteration(experiment, tolerance=1e-6)
+    plt.show()
