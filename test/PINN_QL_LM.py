@@ -405,7 +405,7 @@ class DampedGaussNewton(OptimizerBase):
         problem,
         network,
         theta0,
-        damping=100,
+        damping=1e-2,
         max_iter=1000,
         tolerance=1e-6
     ):
@@ -536,20 +536,20 @@ def plot_solution(
 
     style_map = {
         "Damped Gauss-Newton": {
-            "ls": "--",          
-            "color": "#D95F02",   
+            "ls": "--",
+            "color": "#D95F02",
             "lw": 2.2,
             "zorder": 4
         },
         "Gradient": {
-            "ls": ":",           
-            "color": "#7570B3",  
+            "ls": ":",
+            "color": "#7570B3",
             "lw": 2.5,
             "zorder": 3
         },
         "Semi-gradient": {
-            "ls": "-.",          
-            "color": "#1B9E77",   
+            "ls": "-.",
+            "color": "#1B9E77",
             "lw": 2.0,
             "zorder": 2
         }
@@ -570,9 +570,9 @@ def plot_solution(
 
     for name, optimizer in experiment.results.items():
         u_pred = network.forward(x_plot, optimizer.theta)
-        
+
         style = style_map.get(
-            name, 
+            name,
             {"ls": ":", "color": "gray", "lw": 2.0, "zorder": 2}
         )
 
@@ -594,11 +594,11 @@ def plot_solution(
     plt.grid(True, linestyle=":", alpha=0.5)
 
     plt.tight_layout()
-    #plt.show()
+    # plt.show()
 
 
 # ============================================================
-# 9. Plot 2: Residual vs Iteration (Log-Log Scale)
+# 9. Plot 2: Residual vs Iteration
 # ============================================================
 
 def plot_residual_vs_iteration(
@@ -628,20 +628,20 @@ def plot_residual_vs_iteration(
             "zorder": 2
         }
     }
-    
+
     plt.figure(figsize=(9, 6))
 
     for name, optimizer in experiment.results.items():
         residuals = np.array(optimizer.residuals)
-        iterations_plus_one = np.array(optimizer.iterations) + 1
+        iterations = np.array(optimizer.iterations)
 
         style = style_map.get(
             name,
             {"ls": ":", "color": "gray", "lw": 2.0, "marker": "o", "zorder": 2}
         )
 
-        plt.loglog(
-            iterations_plus_one,
+        plt.semilogy(
+            iterations,
             residuals,
             label=name,
             linestyle=style["ls"],
@@ -658,8 +658,8 @@ def plot_residual_vs_iteration(
             idx = indices[0]
 
             r_conv = residuals[idx]
-            iter_conv = optimizer.iterations[idx]     
-            x_conv = iterations_plus_one[idx]          
+            iter_conv = optimizer.iterations[idx]
+            x_conv = iterations[idx]
 
             plt.scatter(
                 x_conv,
@@ -707,15 +707,15 @@ def plot_residual_vs_iteration(
         label=r"$10^{-6}$ target"
     )
 
-    plt.xlabel("Iteration (log scale)", fontsize=12)
-    plt.ylabel(r"Residual norm $\|r\|_2$ (log scale)", fontsize=12)
+    plt.xlabel("Iteration", fontsize=12)
+    plt.ylabel(r"Residual norm $\|r\|_2$ (log)", fontsize=12)
     plt.title("Convergence History: Residual vs. Iteration", fontsize=13)
 
     plt.legend(frameon=True, facecolor="white", framealpha=0.9, fontsize=10)
     plt.grid(True, which="both", linestyle=":", alpha=0.5)
 
     plt.tight_layout()
-    #plt.show()
+    # plt.show()
 
 
 # ============================================================
@@ -765,16 +765,16 @@ if __name__ == "__main__":
 
     experiment = Experiment(
         N=64,
-        n_collocation=191,
+        n_collocation=192,
         seed=42
     )
 
     experiment.run_all(
-        alpha_gradient=1e-5,
-        alpha_semi=1e-5,
+        alpha_gradient=1e-4,
+        alpha_semi=1e-4,
         damping=1e-2,
-        max_iter_gradient=10000,
-        max_iter_semi=10000,
+        max_iter_gradient=1000,
+        max_iter_semi=1000,
         max_iter_newton=1000,
         tolerance=1e-6
     )
